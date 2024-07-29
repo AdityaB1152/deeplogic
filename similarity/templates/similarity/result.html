@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Similarity Result</title>
+</head>
+<body>
+    <h1>Similarity Result</h1>
+    <p>Uploaded Invoice: <a href="{{ new_invoice.pdf.url }}">{{ new_invoice.pdf.name }}</a></p>
+    {% if message %}
+        <p>{{ message }}</p>
+    {% else %}
+        <p>Most Similar Invoice: <a href="{{ best_match.pdf.url }}">{{ best_match.pdf.name }}</a></p>
+        <p>Similarity Score: {{ similarity_score }}</p>
+    {% endif %}
+    {% if messages %}
+        {% for message in messages %}
+            <p>{{ message }}</p>
+        {% endfor %}
+    {% endif %}
+</body>
+</html>
