@@ -1,21 +1,112 @@
+{% load custom_filters %}
+
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Similarity Result</title>
+    <meta charset="UTF-8">
+    <title>Invoice Similarity Result</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            color: #333;
+        }
+        .container {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+        }
+        .invoice-box {
+            width: 48%;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            background-color: #f9f9f9;
+        }
+        .invoice-box img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 4px;
+        }
+        .invoice-box h2 {
+            margin-top: 0;
+            font-size: 1.5em;
+            color: #007bff;
+        }
+        .invoice-box p {
+            margin: 5px 0;
+        }
+        .similarity-score {
+            font-size: 1.25em;
+            font-weight: bold;
+            color: #333;
+            border: 1px solid #007bff;
+            background-color: #e9f5ff;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .header {
+            margin-bottom: 20px;
+        }
+        .error-message {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
 </head>
 <body>
-    <h1>Similarity Result</h1>
-    <p>Uploaded Invoice: <a href="{{ new_invoice.pdf.url }}">{{ new_invoice.pdf.name }}</a></p>
-    {% if message %}
-        <p>{{ message }}</p>
-    {% else %}
-        <p>Most Similar Invoice: <a href="{{ best_match.pdf.url }}">{{ best_match.pdf.name }}</a></p>
-        <p>Similarity Score: {{ similarity_score }}</p>
-    {% endif %}
-    {% if messages %}
-        {% for message in messages %}
-            <p>{{ message }}</p>
-        {% endfor %}
-    {% endif %}
+    <div class="header">
+        <h1>Invoice Similarity Result</h1>
+        <div class="similarity-score">
+            <h3>Similarity Score:</h3>
+            <p>{{ similarity_score }}</p>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="invoice-box">
+            <h2>Uploaded Invoice:</h2>
+            {% if target_invoice %}
+                <p><strong>ID:</strong> {{ target_invoice.id }}</p>
+                <p><strong>Uploaded At:</strong> {{ target_invoice.uploaded_at }}</p>
+                {% if target_invoice.image_path %}
+                    {% with target_invoice.image_path as img_url %}
+                        {% with img_url|slice_from:"33" as relative_path %}
+                            <img src="{{ relative_path }}" alt="Uploaded Invoice Image" />
+                        {% endwith %}
+                    {% endwith %}
+                {% else %}
+                    <p class="error-message">No image available for this invoice.</p>
+                {% endif %}
+            {% else %}
+                <p class="error-message">No uploaded invoice found.</p>
+            {% endif %}
+        </div>
+
+        <div class="invoice-box">
+            <h2>Most Similar Invoice:</h2>
+            {% if most_similar_invoice %}
+                <p><strong>ID:</strong> {{ most_similar_invoice.id }}</p>
+                <p><strong>Uploaded At:</strong> {{ most_similar_invoice.uploaded_at }}</p>
+                {% if most_similar_invoice.image_path %}
+                    {% with most_similar_invoice.image_path as img_url %}
+                        {% with img_url|slice_from:"33" as relative_path %}
+                            <img src="{{ relative_path }}" alt="Most Similar Invoice Image" />
+                        {% endwith %}
+                    {% endwith %}
+                {% else %}
+                    <p class="error-message">No image available for this invoice.</p>
+                {% endif %}
+                <p><strong>File Path:</strong> {{ most_similar_invoice.pdf.url }}</p>
+            {% else %}
+                <p class="error-message">No similar invoice found.</p>
+            {% endif %}
+        </div>
+    </div>
+
+
 </body>
 </html>

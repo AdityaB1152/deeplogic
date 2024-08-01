@@ -4,6 +4,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import os
 from django.conf import settings
+from django.core.files.storage import default_storage
 import cv2
 import hashlib
 from skimage.metrics import structural_similarity as ssim
@@ -11,10 +12,10 @@ from skimage.metrics import structural_similarity as ssim
 def extract_text_from_pdf(pdf_path):
     try:
         pdf_file = open(pdf_path , 'rb')
-        reader = PyPDF2.PdfFileReader(pdf_file)
+        reader = PyPDF2.PdfReader(pdf_file)
         text=''
-        for page_num in range(reader.numPages):
-            page = reader.getPage(page_num)
+        for page_num in range(len(reader.pages)):
+            page = reader.pages[page_num]
             text += page.extract_text()
         pdf_file.close()
         return text
@@ -25,12 +26,18 @@ def extract_text_from_pdf(pdf_path):
 
 def convert_pdf_to_image(pdf_path):
     try:
-        images = convert_from_path(pdf_path)
-        image_path = os.path.join(settings.MEDIA_ROOT, 'invoices' , os.path.basename(pdf_path)+'.jpg')
-        images[0].save(image_path , 'JPEG')
+        # Save the uploaded PDF to a temporary file
+        temp_pdf_path = default_storage.path(pdf_path)
+        images = convert_from_path(temp_pdf_path)
+        if not images:
+            raise Exception("No images found in PDF")
+        
+        # Save the first page as an image
+        image_path = os.path.join(os.path.dirname(temp_pdf_path), f"{os.path.splitext(os.path.basename(temp_pdf_path))[0]}.png")
+        images[0].save(image_path, 'PNG')
         return image_path
     except Exception as e:
-        raise Exception(f"Error Converting PDF to image: {str(e)}")
+        raise Exception(f"Error converting PDF to image: {str(e)}")
     
 
 def calculate_text_similarity(text1 , text2):
@@ -44,7 +51,7 @@ def calculate_text_similarity(text1 , text2):
     
 
 
-def calculate_structral_similarity(image_path1 , image_path2):
+def calculate_structural_similarity(image_path1 , image_path2):
     try:
         image1 = cv2.imread(image_path1 , cv2.IMREAD_GRAYSCALE)
         image2 = cv2.imread(image_path2 , cv2.IMREAD_GRAYSCALE)
@@ -55,12 +62,13 @@ def calculate_structral_similarity(image_path1 , image_path2):
 def calculate_combined_similarity(text_similarity , structural_similarity , text_weight=0.7, structure_weight=0.3):
     return (text_similarity * text_weight) + (structural_similarity * structure_weight)
 
+
 def generate_file_hash(file_path):
+    hash_alg = hashlib.sha256()  # Use SHA-256 for a unique hash
     try:
-        hasher = hashlib.sha256()
-        with open(file_path , 'rb') as f:
-            buf = f.read()
-            hasher.update(buf)
-        return hasher.hexdigest()
+        with open(file_path, 'rb') as file:
+            while chunk := file.read(8192):
+                hash_alg.update(chunk)
+        return hash_alg.hexdigest()
     except Exception as e:
-         raise Exception(f"Error generating file hash: {str(e)}") 
+        raise Exception(f"Error generating file hash: {str(e)}")

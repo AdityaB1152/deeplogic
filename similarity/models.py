@@ -5,3 +5,4 @@ class Invoice(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True)
     text = models.TextField(blank=True)
     image_path = models.CharField(max_length=255, blank=True)
+    hash = models.CharField(max_length=64)

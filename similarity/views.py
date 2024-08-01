@@ -1,8 +1,10 @@
-from django.shortcuts import render, redirect , get_object_or_404
-from .utility import extract_text_from_pdf, convert_pdf_to_image, generate_file_hash,calculate_text_similarity, calculate_structral_similarity, calculate_combined_similarity
-from .forms import InvoiceUploadForm
-from .models import Invoice
+from django.shortcuts import render, redirect
 from django.contrib import messages
+from .models import Invoice
+from .forms import InvoiceUploadForm
+from .utility import extract_text_from_pdf, generate_file_hash, convert_pdf_to_image, calculate_structural_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 def upload_invoice(request):
     if request.method == 'POST':
@@ -10,13 +12,19 @@ def upload_invoice(request):
         if form.is_valid():
             try:
                 invoice = form.save(commit=False)
-                # Generate hash to check for duplicates
-                invoice.hash = generate_file_hash(invoice.pdf.path)
-                if Invoice.objects.filter(hash=invoice.hash).exists():
-                    messages.error(request, 'This invoice already exists.')
-                    return redirect('upload_invoice')
-                invoice.text = extract_text_from_pdf(invoice.pdf.path)
-                invoice.image_path = convert_pdf_to_image(invoice.pdf.path)
+                invoice.pdf.name = form.cleaned_data['pdf'].name
+                invoice.pdf.save(invoice.pdf.name, form.cleaned_data['pdf'])  # Save the file first
+                temp_file_path = invoice.pdf.path
+                invoice.text = extract_text_from_pdf(temp_file_path)
+                invoice.hash = generate_file_hash(temp_file_path)
+
+                # Convert PDF to image
+                try:
+                    invoice.image_path = convert_pdf_to_image(temp_file_path)
+                except Exception as e:
+                    invoice.image_path = None
+                    messages.error(request, f'Error converting PDF to image: {str(e)}')
+
                 invoice.save()
                 messages.success(request, 'Invoice uploaded and processed successfully.')
                 return redirect('result', invoice_id=invoice.id)
@@ -28,34 +36,54 @@ def upload_invoice(request):
         form = InvoiceUploadForm()
     return render(request, 'similarity/upload.html', {'form': form})
 
+def result(request, invoice_id):
+    try:
+        target_invoice = Invoice.objects.get(id=invoice_id)
+        target_text = target_invoice.text
+        target_image_path = target_invoice.image_path
 
+        # Extract all invoice texts from the database
+        invoices = Invoice.objects.exclude(id=invoice_id)
+        texts = [inv.text for inv in invoices]
 
-def result(request , invoice_id):
-    new_invoice = get_object_or_404(Invoice, id=invoice_id)
+        # If there are other invoices to compare
+        if texts:
+            texts.append(target_text)
 
-    if Invoice.objects.exclude(id=invoice_id).count() == 0:
-        return render(request , 'similarity/result.html',{
-            'new_invoice':new_invoice,
-            'best_match':None,
-            'similarity_score':None,
-            'message':'This is the first uploaded invoice. No comparison can be made yet.'
-        })
-    
-    best_match , best_score = None,0
-    for invoice in Invoice.objects.exclude(id=invoice_id):
-        try:
-            text_sim = calculate_text_similarity(new_invoice.text , invoice.text)
-            structre_sim = calculate_structral_similarity(new_invoice.image_path , invoice.image_path)
-            combined_sim = calculate_combined_similarity(text_sim , structre_sim)
-            if combined_sim > best_score :
-                best_score = combined_sim
-                best_match = invoice
-        except Exception as e :
-            messages.error(request, f'Error comparing invoices: {str(e)}')
+            # Convert texts to TF-IDF vectors
+            vectorizer = TfidfVectorizer()
+            vectors = vectorizer.fit_transform(texts)
 
+            # Compute cosine similarity
+            cosine_similarities = cosine_similarity(vectors[-1], vectors[:-1])
+            most_similar_index = int(cosine_similarities.argmax())  # Ensure the index is a Python integer
 
-    return render(request, 'similarity/result.html' , {
-        'new_invoice':new_invoice,
-        'best_match':best_match,
-        'similarity_score':best_score
-    })
+            # Get the most similar invoice
+            most_similar_invoice = invoices[most_similar_index]
+            most_similar_image_path = most_similar_invoice.image_path
+
+            # Compute structural similarity if both images are available
+            structural_similarity = None
+            if target_image_path and most_similar_image_path:
+                try:
+                    structural_similarity = calculate_structural_similarity(target_image_path, most_similar_image_path)
+                except Exception as e:
+                    messages.error(request, f'Error calculating structural similarity: {str(e)}')
+
+            context = {
+                'target_invoice': target_invoice,
+                'most_similar_invoice': most_similar_invoice,
+                'similarity_score': cosine_similarities[0, most_similar_index],
+                'structural_similarity': structural_similarity
+            }
+            return render(request, 'similarity/result.html', context)
+        else:
+            messages.warning(request, 'No other invoices to compare with.')
+            return redirect('upload_invoice')
+
+    except Invoice.DoesNotExist:
+        messages.error(request, 'Invoice not found.')
+        return redirect('upload_invoice')
+    except Exception as e:
+        messages.error(request, f'Error processing similarity: {str(e)}')
+        return redirect('upload_invoice')
